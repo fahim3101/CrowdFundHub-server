@@ -21,6 +21,19 @@ app.get('/', (req, res) => {
   res.send('CrowdFundHub server is running');
 });
 
+// TEMP DEBUG: confirm env vars are actually injected by Vercel
+app.get('/debug-env', (req, res) => {
+  const uri = process.env.MONGODB_URI || 'NOT_SET';
+  res.json({
+    hasMongoUri: uri !== 'NOT_SET',
+    uriStart: uri.substring(0, 30),
+    uriProtocol: uri.startsWith('mongodb+srv://') ? 'srv' : uri.startsWith('mongodb://') ? 'standard' : 'unknown',
+    uriLength: uri.length,
+    hasJwt: !!process.env.JWT_SECRET,
+    hasStripe: !!process.env.STRIPE_SECRET_KEY,
+  });
+});
+
 app.use(userRoutes);
 app.use(campaignRoutes);
 app.use(contributionRoutes);
