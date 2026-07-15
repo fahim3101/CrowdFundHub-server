@@ -21,17 +21,18 @@ app.get('/', (req, res) => {
   res.send('CrowdFundHub server is running');
 });
 
-// TEMP DEBUG: confirm env vars are actually injected by Vercel
-app.get('/debug-env', (req, res) => {
-  const uri = process.env.MONGODB_URI || 'NOT_SET';
-  res.json({
-    hasMongoUri: uri !== 'NOT_SET',
-    uriStart: uri.substring(0, 30),
-    uriProtocol: uri.startsWith('mongodb+srv://') ? 'srv' : uri.startsWith('mongodb://') ? 'standard' : 'unknown',
-    uriLength: uri.length,
-    hasJwt: !!process.env.JWT_SECRET,
-    hasStripe: !!process.env.STRIPE_SECRET_KEY,
-  });
+// Every request waits here until MongoDB is actually connected.
+// On the first-ever request this does the real connect; every request after
+// that (including on a warm serverless instance) reuses the same connection
+// instantly. This is what fixes requests hanging into a 504 on Vercel.
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('❌ Failed to connect to MongoDB:', err.message);
+    res.status(500).send({ message: 'Database connection failed, please try again' });
+  }
 });
 
 app.use(userRoutes);
@@ -42,15 +43,13 @@ app.use(paymentRoutes);
 app.use(notificationRoutes);
 app.use(reportRoutes);
 
-// Connect to MongoDB once, then start accepting requests.
-connectDB()
-  .then(() => {
-    app.listen(port, () => {
-      console.log(`🚀 CrowdFundHub server listening on port ${port}`);
-    });
-  })
-  .catch((err) => {
-    console.error('❌ Failed to connect to MongoDB:', err.message);
+// Only actually bind to a port when run directly (local `npm run dev`).
+// On Vercel, the module is imported and its request handler is invoked
+// directly per-request — app.listen() is never used there.
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`🚀 CrowdFundHub server listening on port ${port}`);
   });
+}
 
 module.exports = app;
