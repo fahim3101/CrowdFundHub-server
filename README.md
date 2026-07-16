@@ -18,9 +18,9 @@ This is the **server-side** repository. The client application lives in a separa
 |---|---|
 | 🔗 Live API | https://crowd-fund-hub-server.vercel.app |
 | 🔗 Live Client | https://crowd-fund-hub-client.vercel.app |
-| 🔗 Client Repository | _paste your client GitHub repo link here_ |
-| 🔐 Admin Email | _paste the admin email here_ |
-| 🔐 Admin Password | _paste the admin password here_ |
+| 🔗 Client Repository | https://github.com/fahim3101/CrowdFundHub-client |
+| 🔐 Admin Email | admin@gmail.com |
+| 🔐 Admin Password | Admin123 |
 
 ## ✨ Highlights
 
@@ -140,7 +140,7 @@ All private routes require `Authorization: Bearer <token>`.
 
 ## ⚙️ Environment Variables
 
-Create a `.env` file (see `.env.example`):
+Create a `.env` file:
 
 ```dotenv
 MONGODB_URI=
