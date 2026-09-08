@@ -21,25 +21,40 @@ router.post('/withdrawals', verifyToken, verifyCreator, async (req, res) => {
   const data = req.body;
   const credits = Number(data.withdrawal_credit);
 
-  if (credits < MIN_WITHDRAW_CREDITS) {
+  if (!Number.isInteger(credits) || credits < MIN_WITHDRAW_CREDITS) {
     return res.status(400).send({ message: `Minimum withdrawal is ${MIN_WITHDRAW_CREDITS} credits` });
   }
+  if (data.creator_email !== req.decoded.email) {
+    return res.status(403).send({ message: 'You can only withdraw from your own account' });
+  }
+  if (!data.payment_system || !data.account_number) {
+    return res.status(400).send({ message: 'Payment system and account number are required' });
+  }
 
-  // total raised across every approved campaign this creator owns
-  const campaigns = await campaignsCollection.find({ creator_email: data.creator_email }).toArray();
+  // total raised across every APPROVED campaign this creator owns
+  const campaigns = await campaignsCollection
+    .find({ creator_email: data.creator_email, status: 'approved' })
+    .toArray();
   const totalRaised = campaigns.reduce((sum, c) => sum + (c.amount_raised || 0), 0);
 
-  if (credits > totalRaised) {
-    return res.status(400).send({ message: 'Insufficient credit' });
+  // Subtract already-pending requests so creator can't double-book the same credits
+  const pendingReqs = await withdrawalsCollection
+    .find({ creator_email: data.creator_email, status: 'pending' })
+    .toArray();
+  const pendingSum = pendingReqs.reduce((sum, w) => sum + (w.withdrawal_credit || 0), 0);
+  const available = totalRaised - pendingSum;
+
+  if (credits > available) {
+    return res.status(400).send({ message: `Insufficient available credit. Available: ${available}, pending: ${pendingSum}` });
   }
 
   const withdrawal = {
     creator_email: data.creator_email,
-    creator_name: data.creator_name,
+    creator_name: String(data.creator_name || '').slice(0, 100),
     withdrawal_credit: credits,
     withdrawal_amount: credits / CREDITS_PER_DOLLAR,
-    payment_system: data.payment_system,
-    account_number: data.account_number,
+    payment_system: String(data.payment_system).slice(0, 50),
+    account_number: String(data.account_number).slice(0, 100),
     withdraw_date: new Date(),
     status: 'pending',
   };
@@ -75,10 +90,18 @@ router.patch('/withdrawals/approve/:id', verifyToken, verifyAdmin, validateObjec
   const withdrawal = await withdrawalsCollection.findOne({ _id: new ObjectId(req.params.id) });
   if (!withdrawal) return res.status(404).send({ message: 'Withdrawal request not found' });
 
-  await withdrawalsCollection.updateOne(
-    { _id: new ObjectId(req.params.id) },
+  // Idempotency: only pending can be approved. Prevents double-deduction on double-click.
+  if (withdrawal.status !== 'pending') {
+    return res.status(400).send({ message: `Already ${withdrawal.status}. Only pending withdrawals can be approved.` });
+  }
+
+  const updateRes = await withdrawalsCollection.updateOne(
+    { _id: new ObjectId(req.params.id), status: 'pending' },
     { $set: { status: 'approved' } }
   );
+  if (updateRes.modifiedCount === 0) {
+    return res.status(400).send({ message: 'Withdrawal was already processed' });
+  }
 
   // pull the paid-out credits back out of this creator's raised totals,
   // oldest campaign first, so "amount_raised" always reflects money still on the platform
