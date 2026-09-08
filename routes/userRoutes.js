@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
+const { verifyFirebaseIdToken } = require('../config/firebase');
 const verifyToken = require('../middleware/verifyToken');
 const { verifyAdmin } = require('../middleware/verifyRoles');
 const verifyOwner = require('../middleware/verifyOwner');
@@ -11,20 +12,35 @@ const { jwtLimiter, registerLimiter } = require('../middleware/rateLimit');
 const router = express.Router();
 
 // ---- Issue a JWT for an already-authenticated (Firebase) user ----
-// Client calls this right after Firebase login/register succeeds.
-// TODO(security): verify Firebase ID token with firebase-admin instead of trusting email.
-// Until then: short expiry (1d), strict email format, and in-memory rate limit.
-router.post('/jwt', jwtLimiter, (req, res) => {
-  const { email } = req.body;
-  if (!email || typeof email !== 'string' || !email.includes('@') || email.length > 254) {
-    return res.status(400).send({ message: 'Valid email is required' });
+// Client calls this right after Firebase login/register succeeds with
+// the Firebase ID token: POST /jwt { idToken }.
+// We verify the ID token with firebase-admin, then issue our own short-lived JWT.
+router.post('/jwt', jwtLimiter, async (req, res) => {
+  const { idToken } = req.body;
+  if (!idToken || typeof idToken !== 'string' || idToken.length > 10000) {
+    return res.status(400).send({ message: 'Valid Firebase ID token is required' });
   }
   if (!process.env.JWT_SECRET) {
     return res.status(500).send({ message: 'Server misconfigured: JWT_SECRET missing' });
   }
 
-  const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
-  res.send({ token });
+  if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
+    return res.status(500).send({
+      message:
+        'Server misconfigured: FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY missing',
+    });
+  }
+
+  try {
+    const decoded = await verifyFirebaseIdToken(idToken);
+    if (!decoded.email || typeof decoded.email !== 'string') {
+      return res.status(401).send({ message: 'Firebase token has no email' });
+    }
+    const token = jwt.sign({ email: decoded.email }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    res.send({ token });
+  } catch (err) {
+    return res.status(401).send({ message: 'Invalid Firebase ID token' });
+  }
 });
 
 // ---- Register a new user (called once, right after Firebase signup) ----
