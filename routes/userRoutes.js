@@ -6,14 +6,15 @@ const verifyToken = require('../middleware/verifyToken');
 const { verifyAdmin } = require('../middleware/verifyRoles');
 const verifyOwner = require('../middleware/verifyOwner');
 const { validateObjectId, ALLOWED_ROLES } = require('../utils/validate');
+const { jwtLimiter, registerLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
 // ---- Issue a JWT for an already-authenticated (Firebase) user ----
 // Client calls this right after Firebase login/register succeeds.
 // TODO(security): verify Firebase ID token with firebase-admin instead of trusting email.
-// Until then: short expiry (1d), strict email format, and rate-limit this route via gateway.
-router.post('/jwt', (req, res) => {
+// Until then: short expiry (1d), strict email format, and in-memory rate limit.
+router.post('/jwt', jwtLimiter, (req, res) => {
   const { email } = req.body;
   if (!email || typeof email !== 'string' || !email.includes('@') || email.length > 254) {
     return res.status(400).send({ message: 'Valid email is required' });
@@ -29,7 +30,7 @@ router.post('/jwt', (req, res) => {
 // ---- Register a new user (called once, right after Firebase signup) ----
 // NOTE: existing users are NEVER role-changed here. Role change is admin-only
 // via PATCH /users/role/:id. This prevents role hijack + Google-login downgrade.
-router.post('/users', async (req, res) => {
+router.post('/users', registerLimiter, async (req, res) => {
   const { usersCollection } = getCollections();
   const newUser = req.body;
 

@@ -4,8 +4,12 @@ const { getCollections } = require('../config/db');
 const verifyToken = require('../middleware/verifyToken');
 const { verifySupporter, verifyAdmin } = require('../middleware/verifyRoles');
 const { validateObjectId, isValidObjectId } = require('../utils/validate');
+const sendNotification = require('../utils/notify');
+const sendEmail = require('../utils/mailer');
+const wrapEmail = require('../utils/emailTemplates');
 
 const router = express.Router();
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 // ---- Supporter: report a campaign as suspicious/fraudulent ----
 router.post('/reports', verifyToken, verifySupporter, async (req, res) => {
@@ -54,10 +58,30 @@ router.get('/reports', verifyToken, verifyAdmin, async (req, res) => {
 // ---- Admin: suspend the reported campaign (keeps it, hides it from supporters) ----
 router.patch('/reports/suspend/:campaignId', verifyToken, verifyAdmin, validateObjectId('campaignId'), async (req, res) => {
   const { campaignsCollection } = getCollections();
+  const campaign = await campaignsCollection.findOne({ _id: new ObjectId(req.params.campaignId) });
+  if (!campaign) return res.status(404).send({ message: 'Campaign not found' });
+
   const result = await campaignsCollection.updateOne(
     { _id: new ObjectId(req.params.campaignId) },
     { $set: { status: 'suspended' } }
   );
+
+  await sendNotification({
+    message: `Your campaign "${campaign.campaign_title}" was suspended by the admin after a report review`,
+    toEmail: campaign.creator_email,
+    actionRoute: '/dashboard/my-campaigns',
+  });
+
+  await sendEmail({
+    to: campaign.creator_email,
+    subject: 'Your campaign was suspended',
+    html: wrapEmail(
+      'Campaign suspended',
+      `Your campaign <strong>${campaign.campaign_title}</strong> was suspended after a report review. Contact support if you think this is a mistake.`,
+      `${CLIENT_URL}/dashboard/my-campaigns`
+    ),
+  });
+
   res.send(result);
 });
 

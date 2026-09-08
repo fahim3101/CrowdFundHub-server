@@ -81,10 +81,11 @@ All private routes require `Authorization: Bearer <token>`.
 ### Users & Auth
 | Method | Route | Access |
 |---|---|---|
-| POST | `/jwt` | Public |
-| POST | `/users` | Public (register) |
-| GET | `/users/role/:email` | Private |
-| GET | `/users/:email` | Private |
+| POST | `/jwt` | Public — rate-limited, 1d expiry |
+| POST | `/users` | Public (register) — rate-limited, never overwrites role |
+| GET | `/users/role/:email` | Private (owner or admin) |
+| GET | `/users/:email` | Private (owner or admin) |
+| PATCH | `/users/profile/:email` | Private (owner — update own name/photo) |
 | GET | `/users` | Admin |
 | PATCH | `/users/role/:id` | Admin |
 | DELETE | `/users/:id` | Admin |
@@ -132,7 +133,8 @@ All private routes require `Authorization: Bearer <token>`.
 ### Notifications & Reports
 | Method | Route | Access |
 |---|---|---|
-| GET | `/notifications/:email` | Private |
+| GET | `/notifications/:email` | Private (owner or admin) |
+| PATCH | `/notifications/read/:email` | Private (owner — mark all as read) |
 | POST | `/reports` | Supporter |
 | GET | `/reports` | Admin |
 | PATCH | `/reports/suspend/:campaignId` | Admin |
