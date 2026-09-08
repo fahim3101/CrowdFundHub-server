@@ -34,7 +34,7 @@ This is the **server-side** repository. The client application lives separately 
 - **Database-side search & sort** — campaign discovery (text search, category filter, sorting) runs as a single MongoDB aggregation pipeline.
 - **Dual notification system** — every key decision (contributions, campaigns, withdrawals) writes to a `notifications` collection **and** sends an email via Nodemailer.
 - **Abuse reporting** — supporters can flag suspicious campaigns; admins can suspend or delete them.
-- **Hardened for serverless** — lazy MongoDB initialization, a cached connection promise for cold starts, rate-limited auth routes, and strict CORS / payload limits.
+- **Hardened for serverless** — lazy MongoDB initialization, a cached connection promise for cold starts, rate-limited auth routes with `trust proxy`, security headers (helmet), request logging, a `/health` probe, JSON 404s, and a centralized error handler that never leaks stack traces.
 
 ## 🎯 MVP Scope
 
@@ -52,6 +52,7 @@ This is the **server-side** repository. The client application lives separately 
 | Auth | Firebase Admin SDK (ID-token verification) + custom JWT (`jsonwebtoken`) |
 | Payments | Stripe (`PaymentIntent`) |
 | Email | Nodemailer (Gmail SMTP, optional) |
+| Hardening | helmet, morgan, express-async-errors |
 | Hosting | Vercel (serverless functions) |
 
 ## 📁 Folder Structure
@@ -92,6 +93,8 @@ All private routes require `Authorization: Bearer <token>`.
 ### Users & Auth
 | Method | Route | Access |
 |---|---|---|
+| GET | `/health` | Public — liveness probe (no DB required) |
+| GET | `/` | Public — service banner |
 | POST | `/jwt` | Public, rate-limited — verifies Firebase ID token, issues 1-day JWT |
 | POST | `/users` | Public registration, rate-limited — never overwrites existing roles |
 | GET | `/users/role/:email` | Private (owner or admin) |
