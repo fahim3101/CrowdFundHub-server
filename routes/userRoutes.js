@@ -11,11 +11,18 @@ const router = express.Router();
 
 // ---- Issue a JWT for an already-authenticated (Firebase) user ----
 // Client calls this right after Firebase login/register succeeds.
+// TODO(security): verify Firebase ID token with firebase-admin instead of trusting email.
+// Until then: short expiry (1d), strict email format, and rate-limit this route via gateway.
 router.post('/jwt', (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).send({ message: 'Email is required' });
+  if (!email || typeof email !== 'string' || !email.includes('@') || email.length > 254) {
+    return res.status(400).send({ message: 'Valid email is required' });
+  }
+  if (!process.env.JWT_SECRET) {
+    return res.status(500).send({ message: 'Server misconfigured: JWT_SECRET missing' });
+  }
 
-  const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '1d' });
   res.send({ token });
 });
 

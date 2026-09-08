@@ -14,8 +14,24 @@ const reportRoutes = require('./routes/reportRoutes');
 const app = express();
 const port = process.env.PORT || 5000;
 
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+// CORS whitelist: never reflect arbitrary origins with credentials.
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Allow server-to-server / curl (no origin) + whitelisted web origins
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+  })
+);
+app.disable('x-powered-by');
+app.use(express.json({ limit: '100kb' }));
 
 app.get('/', (req, res) => {
   res.send('CrowdFundHub server is running');

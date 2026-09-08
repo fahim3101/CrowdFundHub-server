@@ -16,4 +16,14 @@ router.get('/notifications/:email', verifyToken, verifyOwner('email'), async (re
   res.send(notifications);
 });
 
+// ---- Mark all as read (fixes bell dot staying on forever) ----
+router.patch('/notifications/read/:email', verifyToken, verifyOwner('email'), async (req, res) => {
+  const { notificationsCollection } = getCollections();
+  const result = await notificationsCollection.updateMany(
+    { toEmail: req.params.email, isRead: false },
+    { $set: { isRead: true } }
+  );
+  res.send(result);
+});
+
 module.exports = router;

@@ -39,8 +39,21 @@ async function connectDB() {
       reportsCollection: db.collection('reports'),
     };
 
+    // Indexes for common queries (safe to re-run, no-ops if they exist)
+    try {
+      await collections.usersCollection.createIndex({ email: 1 }, { unique: true });
+      await collections.campaignsCollection.createIndex({ status: 1, deadline: 1 });
+      await collections.campaignsCollection.createIndex({ creator_email: 1 });
+      await collections.contributionsCollection.createIndex({ supporter_email: 1, current_date: -1 });
+      await collections.contributionsCollection.createIndex({ creator_email: 1, status: 1 });
+      await collections.withdrawalsCollection.createIndex({ creator_email: 1, status: 1 });
+      await collections.paymentsCollection.createIndex({ transactionId: 1 }, { unique: true });
+      await collections.notificationsCollection.createIndex({ toEmail: 1, time: -1 });
+    } catch (idxErr) {
+      console.error('Index creation warning:', idxErr.message);
+    }
+
     await client.db('admin').command({ ping: 1 });
-    console.log('✅ MongoDB connected successfully');
 
     return collections;
   })();
