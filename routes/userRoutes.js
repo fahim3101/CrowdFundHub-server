@@ -20,30 +20,19 @@ router.post('/jwt', (req, res) => {
 });
 
 // ---- Register a new user (called once, right after Firebase signup) ----
+// NOTE: existing users are NEVER role-changed here. Role change is admin-only
+// via PATCH /users/role/:id. This prevents role hijack + Google-login downgrade.
 router.post('/users', async (req, res) => {
   const { usersCollection } = getCollections();
   const newUser = req.body;
 
-  // Log the full request for debugging
-  console.log('=== Creating user ===');
-  console.log('Email:', newUser.email);
-  console.log('Role sent:', newUser.role);
-  console.log('=====================');
+  if (!newUser.email || !newUser.email.includes('@')) {
+    return res.status(400).send({ message: 'Valid email is required' });
+  }
 
   const existing = await usersCollection.findOne({ email: newUser.email });
   if (existing) {
-    // Check if role needs to be updated (e.g., supporter -> creator)
-    const userRole = (newUser.role || '').toLowerCase();
-    console.log('Existing role:', existing.role, 'New role:', userRole);
-    if (existing.role !== userRole && (userRole === 'creator' || userRole === 'supporter')) {
-      await usersCollection.updateOne(
-        { email: newUser.email },
-        { $set: { role: userRole } }
-      );
-      console.log('Updated user role to:', userRole);
-      return res.send({ message: 'User role updated', insertedId: existing._id });
-    }
-    // Already exists - don't re-grant credits
+    // Already exists - don't re-grant credits, don't touch role
     return res.send({ message: 'User already exists', insertedId: null });
   }
 
@@ -51,21 +40,17 @@ router.post('/users', async (req, res) => {
   const userRole = (newUser.role || '').toLowerCase();
   const isCreator = userRole === 'creator';
 
-  console.log('Final userRole:', userRole, 'isCreator:', isCreator);
-
   // Starting credits depend on role, granted exactly once, here at creation time
   const startingCredits = isCreator ? 20 : 50;
 
   const userDoc = {
-    name: newUser.name,
+    name: (newUser.name || '').slice(0, 100),
     email: newUser.email,
-    photoURL: newUser.photoURL || '',
+    photoURL: (newUser.photoURL || '').slice(0, 500),
     role: isCreator ? 'creator' : 'supporter',
     credits: startingCredits,
     createdAt: new Date(),
   };
-
-  console.log('Inserting userDoc with role:', userDoc.role);
 
   const result = await usersCollection.insertOne(userDoc);
   res.send(result);
