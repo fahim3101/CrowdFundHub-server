@@ -36,6 +36,12 @@ This is the **server-side** repository. The client application lives separately 
 - **Abuse reporting** — supporters can flag suspicious campaigns; admins can suspend or delete them.
 - **Hardened for serverless** — lazy MongoDB initialization, a cached connection promise for cold starts, rate-limited auth routes, and strict CORS / payload limits.
 
+## 🎯 MVP Scope
+
+**In scope** — verified Firebase auth + short-lived JWT, role-based route guards, full campaign lifecycle with refunds, credit-hold contributions, withdrawals with minimum + settlement, Stripe test-mode credit purchases, in-app notifications (email optional), campaign reports + admin moderation, serverless deployment.
+
+**Intentionally out of scope** — automated test suite, live Stripe keys, production email deliverability (SPF/DKIM, templates), real-time updates via WebSockets, recurring/subscription payments, multi-currency support.
+
 ## 🧱 Tech Stack
 
 | Layer | Technology |
