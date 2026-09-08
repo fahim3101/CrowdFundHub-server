@@ -3,6 +3,7 @@ const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const verifyToken = require('../middleware/verifyToken');
 const { verifySupporter, verifyAdmin } = require('../middleware/verifyRoles');
+const { validateObjectId, isValidObjectId } = require('../utils/validate');
 
 const router = express.Router();
 
@@ -33,7 +34,7 @@ router.get('/reports', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // ---- Admin: suspend the reported campaign (keeps it, hides it from supporters) ----
-router.patch('/reports/suspend/:campaignId', verifyToken, verifyAdmin, async (req, res) => {
+router.patch('/reports/suspend/:campaignId', verifyToken, verifyAdmin, validateObjectId('campaignId'), async (req, res) => {
   const { campaignsCollection } = getCollections();
   const result = await campaignsCollection.updateOne(
     { _id: new ObjectId(req.params.campaignId) },
@@ -44,6 +45,9 @@ router.patch('/reports/suspend/:campaignId', verifyToken, verifyAdmin, async (re
 
 // ---- Admin: delete the reported campaign entirely ----
 router.delete('/reports/:reportId/:campaignId', verifyToken, verifyAdmin, async (req, res) => {
+  if (!isValidObjectId(req.params.reportId) || !isValidObjectId(req.params.campaignId)) {
+    return res.status(400).send({ message: 'Invalid ID format' });
+  }
   const { campaignsCollection, reportsCollection } = getCollections();
   await campaignsCollection.deleteOne({ _id: new ObjectId(req.params.campaignId) });
   const result = await reportsCollection.deleteOne({ _id: new ObjectId(req.params.reportId) });

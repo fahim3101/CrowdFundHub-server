@@ -4,6 +4,8 @@ const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const verifyToken = require('../middleware/verifyToken');
 const { verifyAdmin } = require('../middleware/verifyRoles');
+const verifyOwner = require('../middleware/verifyOwner');
+const { validateObjectId, ALLOWED_ROLES } = require('../utils/validate');
 
 const router = express.Router();
 
@@ -70,7 +72,7 @@ router.post('/users', async (req, res) => {
 });
 
 // ---- Get a user's role + credits (used right after login to route the dashboard) ----
-router.get('/users/role/:email', verifyToken, async (req, res) => {
+router.get('/users/role/:email', verifyToken, verifyOwner('email'), async (req, res) => {
   const { usersCollection } = getCollections();
   const user = await usersCollection.findOne({ email: req.params.email });
   if (!user) return res.status(404).send({ message: 'User not found' });
@@ -78,7 +80,7 @@ router.get('/users/role/:email', verifyToken, async (req, res) => {
 });
 
 // ---- Get single user credits (used a lot across the dashboard for the topbar) ----
-router.get('/users/:email', verifyToken, async (req, res) => {
+router.get('/users/:email', verifyToken, verifyOwner('email'), async (req, res) => {
   const { usersCollection } = getCollections();
   const user = await usersCollection.findOne({ email: req.params.email });
   if (!user) return res.status(404).send({ message: 'User not found' });
@@ -93,9 +95,12 @@ router.get('/users', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // ---- Admin: change a user's role ----
-router.patch('/users/role/:id', verifyToken, verifyAdmin, async (req, res) => {
+router.patch('/users/role/:id', verifyToken, verifyAdmin, validateObjectId('id'), async (req, res) => {
   const { usersCollection } = getCollections();
   const { role } = req.body;
+  if (!ALLOWED_ROLES.includes(role)) {
+    return res.status(400).send({ message: 'Invalid role. Allowed: supporter, creator, admin' });
+  }
   const result = await usersCollection.updateOne(
     { _id: new ObjectId(req.params.id) },
     { $set: { role } }
@@ -104,7 +109,7 @@ router.patch('/users/role/:id', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // ---- Admin: remove a user ----
-router.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+router.delete('/users/:id', verifyToken, verifyAdmin, validateObjectId('id'), async (req, res) => {
   const { usersCollection } = getCollections();
   const result = await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
   res.send(result);

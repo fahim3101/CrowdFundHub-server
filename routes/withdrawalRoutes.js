@@ -3,6 +3,8 @@ const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const verifyToken = require('../middleware/verifyToken');
 const { verifyCreator, verifyAdmin } = require('../middleware/verifyRoles');
+const verifyOwner = require('../middleware/verifyOwner');
+const { validateObjectId } = require('../utils/validate');
 const sendNotification = require('../utils/notify');
 const sendEmail = require('../utils/mailer');
 const wrapEmail = require('../utils/emailTemplates');
@@ -47,7 +49,7 @@ router.post('/withdrawals', verifyToken, verifyCreator, async (req, res) => {
 });
 
 // ---- Creator: their own withdrawal / payment history ----
-router.get('/withdrawals/creator/:email', verifyToken, verifyCreator, async (req, res) => {
+router.get('/withdrawals/creator/:email', verifyToken, verifyCreator, verifyOwner('email'), async (req, res) => {
   const { withdrawalsCollection } = getCollections();
   const withdrawals = await withdrawalsCollection
     .find({ creator_email: req.params.email })
@@ -67,7 +69,7 @@ router.get('/withdrawals/pending', verifyToken, verifyAdmin, async (req, res) =>
 });
 
 // ---- Admin: mark a withdrawal as paid ----
-router.patch('/withdrawals/approve/:id', verifyToken, verifyAdmin, async (req, res) => {
+router.patch('/withdrawals/approve/:id', verifyToken, verifyAdmin, validateObjectId('id'), async (req, res) => {
   const { withdrawalsCollection, campaignsCollection } = getCollections();
 
   const withdrawal = await withdrawalsCollection.findOne({ _id: new ObjectId(req.params.id) });

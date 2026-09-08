@@ -3,6 +3,8 @@ const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const verifyToken = require('../middleware/verifyToken');
 const { verifySupporter, verifyCreator } = require('../middleware/verifyRoles');
+const verifyOwner = require('../middleware/verifyOwner');
+const { validateObjectId, ALLOWED_CONTRIBUTION_STATUS } = require('../utils/validate');
 const sendNotification = require('../utils/notify');
 const sendEmail = require('../utils/mailer');
 const wrapEmail = require('../utils/emailTemplates');
@@ -61,7 +63,7 @@ router.post('/contributions', verifyToken, verifySupporter, async (req, res) => 
 });
 
 // ---- Creator: contributions awaiting a decision, for their campaigns ----
-router.get('/contributions/pending/:creatorEmail', verifyToken, verifyCreator, async (req, res) => {
+router.get('/contributions/pending/:creatorEmail', verifyToken, verifyCreator, verifyOwner('creatorEmail'), async (req, res) => {
   const { contributionsCollection } = getCollections();
   const contributions = await contributionsCollection
     .find({ creator_email: req.params.creatorEmail, status: 'pending' })
@@ -71,7 +73,7 @@ router.get('/contributions/pending/:creatorEmail', verifyToken, verifyCreator, a
 });
 
 // ---- Supporter: every contribution they've made (paginated) ----
-router.get('/contributions/supporter/:email', verifyToken, verifySupporter, async (req, res) => {
+router.get('/contributions/supporter/:email', verifyToken, verifySupporter, verifyOwner('email'), async (req, res) => {
   const { contributionsCollection } = getCollections();
   const page = parseInt(req.query.page) || 0;
   const limit = parseInt(req.query.limit) || 5;
@@ -89,7 +91,7 @@ router.get('/contributions/supporter/:email', verifyToken, verifySupporter, asyn
 });
 
 // ---- Supporter: only the approved ones, for the home page state table ----
-router.get('/contributions/approved/:email', verifyToken, verifySupporter, async (req, res) => {
+router.get('/contributions/approved/:email', verifyToken, verifySupporter, verifyOwner('email'), async (req, res) => {
   const { contributionsCollection } = getCollections();
   const contributions = await contributionsCollection
     .find({ supporter_email: req.params.email, status: 'approved' })
@@ -99,9 +101,12 @@ router.get('/contributions/approved/:email', verifyToken, verifySupporter, async
 });
 
 // ---- Creator: approve or reject one contribution ----
-router.patch('/contributions/status/:id', verifyToken, verifyCreator, async (req, res) => {
+router.patch('/contributions/status/:id', verifyToken, verifyCreator, validateObjectId('id'), async (req, res) => {
   const { contributionsCollection, campaignsCollection, usersCollection } = getCollections();
   const { status } = req.body; // 'approved' | 'rejected'
+  if (!ALLOWED_CONTRIBUTION_STATUS.includes(status)) {
+    return res.status(400).send({ message: 'Invalid status. Allowed: approved, rejected' });
+  }
 
   const contribution = await contributionsCollection.findOne({ _id: new ObjectId(req.params.id) });
   if (!contribution) return res.status(404).send({ message: 'Contribution not found' });

@@ -3,6 +3,8 @@ const { ObjectId } = require('mongodb');
 const { getCollections } = require('../config/db');
 const verifyToken = require('../middleware/verifyToken');
 const { verifyCreator, verifyAdmin } = require('../middleware/verifyRoles');
+const verifyOwner = require('../middleware/verifyOwner');
+const { validateObjectId, ALLOWED_CAMPAIGN_STATUS } = require('../utils/validate');
 const sendNotification = require('../utils/notify');
 const sendEmail = require('../utils/mailer');
 const wrapEmail = require('../utils/emailTemplates');
@@ -52,7 +54,7 @@ router.get('/campaigns/top-funded', async (req, res) => {
 });
 
 // ---- Creator: campaigns they launched ----
-router.get('/campaigns/creator/:email', verifyToken, verifyCreator, async (req, res) => {
+router.get('/campaigns/creator/:email', verifyToken, verifyCreator, verifyOwner('email'), async (req, res) => {
   const { campaignsCollection } = getCollections();
   const campaigns = await campaignsCollection
     .find({ creator_email: req.params.email })
@@ -76,7 +78,7 @@ router.get('/campaigns/all', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // ---- Single campaign details ----
-router.get('/campaigns/:id', async (req, res) => {
+router.get('/campaigns/:id', validateObjectId('id'), async (req, res) => {
   const { campaignsCollection } = getCollections();
   const campaign = await campaignsCollection.findOne({ _id: new ObjectId(req.params.id) });
   if (!campaign) return res.status(404).send({ message: 'Campaign not found' });
@@ -109,7 +111,7 @@ router.post('/campaigns', verifyToken, verifyCreator, async (req, res) => {
 });
 
 // ---- Creator: edit title / story / reward only ----
-router.patch('/campaigns/:id', verifyToken, verifyCreator, async (req, res) => {
+router.patch('/campaigns/:id', verifyToken, verifyCreator, validateObjectId('id'), async (req, res) => {
   const { campaignsCollection } = getCollections();
   const { campaign_title, campaign_story, reward_info } = req.body;
 
@@ -121,7 +123,7 @@ router.patch('/campaigns/:id', verifyToken, verifyCreator, async (req, res) => {
 });
 
 // ---- Creator: delete a campaign + refund every approved supporter ----
-router.delete('/campaigns/:id', verifyToken, verifyCreator, async (req, res) => {
+router.delete('/campaigns/:id', verifyToken, verifyCreator, validateObjectId('id'), async (req, res) => {
   const { campaignsCollection, contributionsCollection, usersCollection } = getCollections();
   const campaignId = req.params.id;
 
@@ -143,9 +145,12 @@ router.delete('/campaigns/:id', verifyToken, verifyCreator, async (req, res) => 
 });
 
 // ---- Admin: approve or reject a campaign ----
-router.patch('/campaigns/status/:id', verifyToken, verifyAdmin, async (req, res) => {
+router.patch('/campaigns/status/:id', verifyToken, verifyAdmin, validateObjectId('id'), async (req, res) => {
   const { campaignsCollection } = getCollections();
   const { status } = req.body; // 'approved' | 'rejected'
+  if (!ALLOWED_CAMPAIGN_STATUS.includes(status)) {
+    return res.status(400).send({ message: 'Invalid status. Allowed: approved, rejected' });
+  }
 
   const campaign = await campaignsCollection.findOne({ _id: new ObjectId(req.params.id) });
   if (!campaign) return res.status(404).send({ message: 'Campaign not found' });
@@ -175,7 +180,7 @@ router.patch('/campaigns/status/:id', verifyToken, verifyAdmin, async (req, res)
 });
 
 // ---- Admin: delete any campaign from Manage Campaigns ----
-router.delete('/campaigns/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
+router.delete('/campaigns/admin/:id', verifyToken, verifyAdmin, validateObjectId('id'), async (req, res) => {
   const { campaignsCollection } = getCollections();
   const result = await campaignsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
   res.send(result);

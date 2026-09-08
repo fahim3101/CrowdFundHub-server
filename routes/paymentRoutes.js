@@ -3,6 +3,7 @@ const Stripe = require('stripe');
 const { getCollections } = require('../config/db');
 const verifyToken = require('../middleware/verifyToken');
 const { verifySupporter, verifyAdmin } = require('../middleware/verifyRoles');
+const verifyOwner = require('../middleware/verifyOwner');
 
 const router = express.Router();
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
@@ -48,7 +49,7 @@ router.post('/payments', verifyToken, verifySupporter, async (req, res) => {
 });
 
 // ---- Supporter: their payment history ----
-router.get('/payments/:email', verifyToken, verifySupporter, async (req, res) => {
+router.get('/payments/:email', verifyToken, verifySupporter, verifyOwner('email'), async (req, res) => {
   const { paymentsCollection } = getCollections();
   const payments = await paymentsCollection
     .find({ email: req.params.email })
