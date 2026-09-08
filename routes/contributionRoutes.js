@@ -18,43 +18,81 @@ router.post('/contributions', verifyToken, verifySupporter, async (req, res) => 
   const data = req.body;
   const amount = Number(data.contribution_amount);
 
-  const supporter = await usersCollection.findOne({ email: data.supporter_email });
-  if (!supporter || supporter.credits < amount) {
+  // Basic sanity: positive integer amount, and supporter can only spend their own credits
+  if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount <= 0) {
+    return res.status(400).send({ message: 'Contribution amount must be a positive integer' });
+  }
+  if (data.supporter_email !== req.decoded.email) {
+    return res.status(403).send({ message: 'You can only contribute from your own account' });
+  }
+  if (!data.campaign_id) {
+    return res.status(400).send({ message: 'campaign_id is required' });
+  }
+
+  // Campaign must exist, be approved, not expired
+  let campaign;
+  try {
+    campaign = await campaignsCollection.findOne({ _id: new ObjectId(data.campaign_id) });
+  } catch {
+    return res.status(400).send({ message: 'Invalid campaign_id' });
+  }
+  if (!campaign) return res.status(404).send({ message: 'Campaign not found' });
+  if (campaign.status !== 'approved') {
+    return res.status(400).send({ message: 'This campaign is not accepting contributions right now' });
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  if (campaign.deadline && campaign.deadline < today) {
+    return res.status(400).send({ message: 'This campaign has expired' });
+  }
+  if (amount < (campaign.minimum_contribution || 1)) {
+    return res.status(400).send({ message: `Minimum contribution is ${campaign.minimum_contribution} credits` });
+  }
+
+  // Atomic hold: deduct only if balance is enough. Prevents double-spend on parallel requests.
+  const deductRes = await usersCollection.updateOne(
+    { email: data.supporter_email, credits: { $gte: amount } },
+    { $inc: { credits: -amount } }
+  );
+  if (deductRes.modifiedCount === 0) {
     return res.status(400).send({ message: 'Not enough credits for this contribution' });
   }
 
   const contribution = {
     campaign_id: data.campaign_id,
-    campaign_title: data.campaign_title,
+    campaign_title: campaign.campaign_title,
     contribution_amount: amount,
     supporter_email: data.supporter_email,
-    supporter_name: data.supporter_name,
-    creator_email: data.creator_email,
-    creator_name: data.creator_name,
+    supporter_name: (data.supporter_name || '').slice(0, 100),
+    creator_email: campaign.creator_email,
+    creator_name: campaign.creator_name,
     current_date: new Date(),
     status: 'pending',
   };
 
-  const result = await contributionsCollection.insertOne(contribution);
-
-  // Hold the credits by deducting immediately; rejection refunds them later
-  await usersCollection.updateOne(
-    { email: data.supporter_email },
-    { $inc: { credits: -amount } }
-  );
+  let result;
+  try {
+    result = await contributionsCollection.insertOne(contribution);
+  } catch (err) {
+    // Roll back the hold if insert fails
+    await usersCollection.updateOne(
+      { email: data.supporter_email },
+      { $inc: { credits: amount } }
+    );
+    return res.status(500).send({ message: 'Could not save contribution' });
+  }
 
   await sendNotification({
-    message: `${data.supporter_name} contributed ${amount} credits to ${data.campaign_title}`,
-    toEmail: data.creator_email,
+    message: `${contribution.supporter_name} contributed ${amount} credits to ${campaign.campaign_title}`,
+    toEmail: campaign.creator_email,
     actionRoute: '/dashboard/creator-home',
   });
 
   await sendEmail({
-    to: data.creator_email,
+    to: campaign.creator_email,
     subject: 'New contribution to review',
     html: wrapEmail(
       'New contribution received',
-      `${data.supporter_name} contributed <strong>${amount} credits</strong> to <strong>${data.campaign_title}</strong>. It's waiting for your approval.`,
+      `${contribution.supporter_name} contributed <strong>${amount} credits</strong> to <strong>${campaign.campaign_title}</strong>. It's waiting for your approval.`,
       `${CLIENT_URL}/dashboard/creator-home`
     ),
   });
@@ -111,8 +149,18 @@ router.patch('/contributions/status/:id', verifyToken, verifyCreator, validateOb
   const contribution = await contributionsCollection.findOne({ _id: new ObjectId(req.params.id) });
   if (!contribution) return res.status(404).send({ message: 'Contribution not found' });
 
+  // Ownership: only the campaign owner can decide. Prevents creator A approving creator B's funds.
+  if (contribution.creator_email !== req.decoded.email) {
+    return res.status(403).send({ message: 'You do not own this campaign' });
+  }
+
+  // Idempotency: only pending can transition. Prevents double amount_raised / double refund.
+  if (contribution.status !== 'pending') {
+    return res.status(400).send({ message: `Already ${contribution.status}. Only pending contributions can be decided.` });
+  }
+
   await contributionsCollection.updateOne(
-    { _id: new ObjectId(req.params.id) },
+    { _id: new ObjectId(req.params.id), status: 'pending' },
     { $set: { status } }
   );
 
