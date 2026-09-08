@@ -86,6 +86,26 @@ router.get('/users', verifyToken, verifyAdmin, async (req, res) => {
   res.send(users);
 });
 
+// ---- Self: update own name / photo (profile page) ----
+router.patch('/users/profile/:email', verifyToken, verifyOwner('email'), async (req, res) => {
+  const { usersCollection } = getCollections();
+  const updates = {};
+  if (typeof req.body.name === 'string' && req.body.name.trim()) {
+    updates.name = req.body.name.trim().slice(0, 100);
+  }
+  if (typeof req.body.photoURL === 'string') {
+    updates.photoURL = req.body.photoURL.slice(0, 500);
+  }
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).send({ message: 'Nothing to update (name / photoURL)' });
+  }
+  const result = await usersCollection.updateOne(
+    { email: req.params.email },
+    { $set: updates }
+  );
+  res.send(result);
+});
+
 // ---- Admin: change a user's role ----
 router.patch('/users/role/:id', verifyToken, verifyAdmin, validateObjectId('id'), async (req, res) => {
   const { usersCollection } = getCollections();
