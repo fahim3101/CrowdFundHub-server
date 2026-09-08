@@ -113,6 +113,13 @@ router.post('/campaigns', verifyToken, verifyCreator, async (req, res) => {
 // ---- Creator: edit title / story / reward only ----
 router.patch('/campaigns/:id', verifyToken, verifyCreator, validateObjectId('id'), async (req, res) => {
   const { campaignsCollection } = getCollections();
+
+  const campaign = await campaignsCollection.findOne({ _id: new ObjectId(req.params.id) });
+  if (!campaign) return res.status(404).send({ message: 'Campaign not found' });
+  if (campaign.creator_email !== req.decoded.email) {
+    return res.status(403).send({ message: 'You do not own this campaign' });
+  }
+
   const { campaign_title, campaign_story, reward_info } = req.body;
 
   const result = await campaignsCollection.updateOne(
@@ -122,16 +129,24 @@ router.patch('/campaigns/:id', verifyToken, verifyCreator, validateObjectId('id'
   res.send(result);
 });
 
-// ---- Creator: delete a campaign + refund every approved supporter ----
+// ---- Creator: delete a campaign + refund every non-rejected supporter ----
 router.delete('/campaigns/:id', verifyToken, verifyCreator, validateObjectId('id'), async (req, res) => {
   const { campaignsCollection, contributionsCollection, usersCollection } = getCollections();
   const campaignId = req.params.id;
 
-  const approvedContributions = await contributionsCollection
-    .find({ campaign_id: campaignId, status: 'approved' })
+  const campaign = await campaignsCollection.findOne({ _id: new ObjectId(campaignId) });
+  if (!campaign) return res.status(404).send({ message: 'Campaign not found' });
+  if (campaign.creator_email !== req.decoded.email) {
+    return res.status(403).send({ message: 'You do not own this campaign' });
+  }
+
+  // Both pending (held) and approved credits were deducted at contribute time, so refund both.
+  // Rejected were already refunded — skip them.
+  const refundable = await contributionsCollection
+    .find({ campaign_id: campaignId, status: { $in: ['pending', 'approved'] } })
     .toArray();
 
-  for (const c of approvedContributions) {
+  for (const c of refundable) {
     await usersCollection.updateOne(
       { email: c.supporter_email },
       { $inc: { credits: c.contribution_amount } }
@@ -141,7 +156,7 @@ router.delete('/campaigns/:id', verifyToken, verifyCreator, validateObjectId('id
   await campaignsCollection.deleteOne({ _id: new ObjectId(campaignId) });
   await contributionsCollection.deleteMany({ campaign_id: campaignId });
 
-  res.send({ message: 'Campaign deleted and supporters refunded', refundedCount: approvedContributions.length });
+  res.send({ message: 'Campaign deleted and supporters refunded', refundedCount: refundable.length });
 });
 
 // ---- Admin: approve or reject a campaign ----
@@ -181,9 +196,33 @@ router.patch('/campaigns/status/:id', verifyToken, verifyAdmin, validateObjectId
 
 // ---- Admin: delete any campaign from Manage Campaigns ----
 router.delete('/campaigns/admin/:id', verifyToken, verifyAdmin, validateObjectId('id'), async (req, res) => {
-  const { campaignsCollection } = getCollections();
-  const result = await campaignsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
-  res.send(result);
+  const { campaignsCollection, contributionsCollection, usersCollection, reportsCollection } = getCollections();
+  const campaignId = req.params.id;
+
+  const campaign = await campaignsCollection.findOne({ _id: new ObjectId(campaignId) });
+  if (!campaign) return res.status(404).send({ message: 'Campaign not found' });
+
+  const refundable = await contributionsCollection
+    .find({ campaign_id: campaignId, status: { $in: ['pending', 'approved'] } })
+    .toArray();
+  for (const c of refundable) {
+    await usersCollection.updateOne(
+      { email: c.supporter_email },
+      { $inc: { credits: c.contribution_amount } }
+    );
+  }
+
+  await campaignsCollection.deleteOne({ _id: new ObjectId(campaignId) });
+  await contributionsCollection.deleteMany({ campaign_id: campaignId });
+  await reportsCollection.deleteMany({ campaign_id: campaignId });
+
+  await sendNotification({
+    message: `Your campaign "${campaign.campaign_title}" was removed by the admin. ${refundable.length} supporter(s) refunded.`,
+    toEmail: campaign.creator_email,
+    actionRoute: '/dashboard/my-campaigns',
+  });
+
+  res.send({ message: 'Campaign deleted and supporters refunded', refundedCount: refundable.length });
 });
 
 module.exports = router;
