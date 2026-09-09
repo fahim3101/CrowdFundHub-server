@@ -104,10 +104,12 @@ router.patch('/withdrawals/approve/:id', verifyToken, verifyAdmin, validateObjec
   }
 
   // pull the paid-out credits back out of this creator's raised totals,
-  // oldest campaign first, so "amount_raised" always reflects money still on the platform
+  // oldest campaign first, so "amount_raised" always reflects money still on the platform.
+  // Matches the availability calc above: only APPROVED campaigns count.
   let remaining = withdrawal.withdrawal_credit;
   const campaigns = await campaignsCollection
-    .find({ creator_email: withdrawal.creator_email, amount_raised: { $gt: 0 } })
+    .find({ creator_email: withdrawal.creator_email, status: 'approved', amount_raised: { $gt: 0 } })
+    .sort({ createdAt: 1 })
     .toArray();
 
   for (const campaign of campaigns) {

@@ -113,8 +113,8 @@ router.get('/contributions/pending/:creatorEmail', verifyToken, verifyCreator, v
 // ---- Supporter: every contribution they've made (paginated) ----
 router.get('/contributions/supporter/:email', verifyToken, verifySupporter, verifyOwner('email'), async (req, res) => {
   const { contributionsCollection } = getCollections();
-  const page = parseInt(req.query.page) || 0;
-  const limit = parseInt(req.query.limit) || 5;
+  const page = Math.max(0, parseInt(req.query.page) || 0);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 5));
 
   const query = { supporter_email: req.params.email };
   const total = await contributionsCollection.countDocuments(query);
@@ -157,6 +157,25 @@ router.patch('/contributions/status/:id', verifyToken, verifyCreator, validateOb
   // Idempotency: only pending can transition. Prevents double amount_raised / double refund.
   if (contribution.status !== 'pending') {
     return res.status(400).send({ message: `Already ${contribution.status}. Only pending contributions can be decided.` });
+  }
+
+  // The campaign may have been suspended/rejected/expired or deleted since the pledge.
+  // Approving into a hidden campaign strands credits (withdrawals only count approved campaigns).
+  if (status === 'approved') {
+    let campaign = null;
+    try {
+      campaign = await campaignsCollection.findOne({ _id: new ObjectId(contribution.campaign_id) });
+    } catch {
+      campaign = null;
+    }
+    if (!campaign) return res.status(400).send({ message: 'Campaign no longer exists' });
+    if (campaign.status !== 'approved') {
+      return res.status(400).send({ message: `Campaign is ${campaign.status} — cannot approve contributions right now` });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (campaign.deadline && campaign.deadline < today) {
+      return res.status(400).send({ message: 'Campaign has expired — cannot approve contributions' });
+    }
   }
 
   await contributionsCollection.updateOne(

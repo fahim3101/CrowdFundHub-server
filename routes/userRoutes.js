@@ -76,8 +76,16 @@ router.post('/users', registerLimiter, async (req, res) => {
     createdAt: new Date(),
   };
 
-  const result = await usersCollection.insertOne(userDoc);
-  res.send(result);
+  try {
+    const result = await usersCollection.insertOne(userDoc);
+    res.send(result);
+  } catch (err) {
+    // Race: two parallel signups for the same email — unique index wins, second is a no-op.
+    if (err?.code === 11000) {
+      return res.send({ message: 'User already exists', insertedId: null });
+    }
+    throw err;
+  }
 });
 
 // ---- Get a user's role + credits (used right after login to route the dashboard) ----
@@ -130,6 +138,19 @@ router.patch('/users/role/:id', verifyToken, verifyAdmin, validateObjectId('id')
   if (!ALLOWED_ROLES.includes(role)) {
     return res.status(400).send({ message: 'Invalid role. Allowed: supporter, creator, admin' });
   }
+  const target = await usersCollection.findOne({ _id: new ObjectId(req.params.id) });
+  if (!target) return res.status(404).send({ message: 'User not found' });
+  // Never let an admin demote/delete themselves via API (client also blocks, this is the real guard).
+  if (target.email === req.decoded.email && target.role === 'admin' && role !== 'admin') {
+    return res.status(400).send({ message: 'You cannot demote yourself — ask another admin.' });
+  }
+  // Never leave the platform with zero admins.
+  if (target.role === 'admin' && role !== 'admin') {
+    const adminCount = await usersCollection.countDocuments({ role: 'admin' });
+    if (adminCount <= 1) {
+      return res.status(400).send({ message: 'Cannot demote the last admin.' });
+    }
+  }
   const result = await usersCollection.updateOne(
     { _id: new ObjectId(req.params.id) },
     { $set: { role } }
@@ -140,6 +161,17 @@ router.patch('/users/role/:id', verifyToken, verifyAdmin, validateObjectId('id')
 // ---- Admin: remove a user ----
 router.delete('/users/:id', verifyToken, verifyAdmin, validateObjectId('id'), async (req, res) => {
   const { usersCollection } = getCollections();
+  const target = await usersCollection.findOne({ _id: new ObjectId(req.params.id) });
+  if (!target) return res.status(404).send({ message: 'User not found' });
+  if (target.email === req.decoded.email) {
+    return res.status(400).send({ message: 'You cannot delete yourself.' });
+  }
+  if (target.role === 'admin') {
+    const adminCount = await usersCollection.countDocuments({ role: 'admin' });
+    if (adminCount <= 1) {
+      return res.status(400).send({ message: 'Cannot delete the last admin.' });
+    }
+  }
   const result = await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
   res.send(result);
 });

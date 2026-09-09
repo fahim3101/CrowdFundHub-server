@@ -94,6 +94,14 @@ router.post('/payments', verifyToken, verifySupporter, async (req, res) => {
   res.send(result);
 });
 
+// ---- Admin: total payments processed platform-wide (for Admin Home states) ----
+// NOTE: defined BEFORE /payments/:email so /payments-count isn't captured as :email.
+router.get('/payments-count', verifyToken, verifyAdmin, async (req, res) => {
+  const { paymentsCollection } = getCollections();
+  const count = await paymentsCollection.countDocuments();
+  res.send({ count });
+});
+
 // ---- Supporter: their payment history ----
 router.get('/payments/:email', verifyToken, verifySupporter, verifyOwner('email'), async (req, res) => {
   const { paymentsCollection } = getCollections();
@@ -102,13 +110,6 @@ router.get('/payments/:email', verifyToken, verifySupporter, verifyOwner('email'
     .sort({ date: -1 })
     .toArray();
   res.send(payments);
-});
-
-// ---- Admin: total payments processed platform-wide (for Admin Home states) ----
-router.get('/payments-count', verifyToken, verifyAdmin, async (req, res) => {
-  const { paymentsCollection } = getCollections();
-  const count = await paymentsCollection.countDocuments();
-  res.send({ count });
 });
 
 module.exports = router;

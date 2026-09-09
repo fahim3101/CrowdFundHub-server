@@ -57,13 +57,23 @@ router.get('/reports', verifyToken, verifyAdmin, async (req, res) => {
 
 // ---- Admin: suspend the reported campaign (keeps it, hides it from supporters) ----
 router.patch('/reports/suspend/:campaignId', verifyToken, verifyAdmin, validateObjectId('campaignId'), async (req, res) => {
-  const { campaignsCollection } = getCollections();
+  const { campaignsCollection, reportsCollection } = getCollections();
   const campaign = await campaignsCollection.findOne({ _id: new ObjectId(req.params.campaignId) });
   if (!campaign) return res.status(404).send({ message: 'Campaign not found' });
+  if (campaign.status === 'suspended') {
+    return res.status(400).send({ message: 'Campaign is already suspended' });
+  }
 
   const result = await campaignsCollection.updateOne(
     { _id: new ObjectId(req.params.campaignId) },
     { $set: { status: 'suspended' } }
+  );
+
+  // Close the loop: resolved reports leave the queue so admins don't re-suspend forever.
+  // Re-approve from Manage Campaigns if the report was a mistake.
+  await reportsCollection.updateMany(
+    { campaign_id: req.params.campaignId, status: 'open' },
+    { $set: { status: 'resolved' } }
   );
 
   await sendNotification({
