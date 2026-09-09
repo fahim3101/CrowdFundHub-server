@@ -81,4 +81,16 @@ function getCollections() {
   return collections;
 }
 
-module.exports = { connectDB, getCollections };
+// Closes the shared client (used by tests / graceful shutdown).
+// Safe to call when never connected.
+async function closeDB() {
+  connectionPromise = null;
+  collections = {};
+  if (client) {
+    const c = client;
+    client = null;
+    await c.close();
+  }
+}
+
+module.exports = { connectDB, getCollections, closeDB };

@@ -7,6 +7,9 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cors = require('cors');
 const { connectDB, getCollections } = require('./config/db');
+const { initSentry, captureError } = require('./utils/sentry');
+
+initSentry();
 
 const userRoutes = require('./routes/userRoutes');
 const campaignRoutes = require('./routes/campaignRoutes');
@@ -87,6 +90,7 @@ app.use((req, res) => {
 // Never leaks stack traces to clients in production — check Vercel Runtime Logs.
 app.use((err, req, res, next) => {
   console.error(`❌ ${req.method} ${req.path}:`, err.message);
+  captureError(err); // no-op unless SENTRY_DSN is set
   const status = err.status && Number.isInteger(err.status) ? err.status : 500;
   res.status(status).send({
     message: status === 500 ? 'Internal server error' : err.message,

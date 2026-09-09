@@ -170,6 +170,7 @@ PORT=5000
 FIREBASE_PROJECT_ID=
 FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+SENTRY_DSN=          # optional — error tracking; leave blank to disable
 ```
 
 > The service-account JSON must never be committed — only these three fields go into env vars, locally and in the Vercel dashboard.
