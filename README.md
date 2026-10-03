@@ -1,7 +1,7 @@
 # CrowdFundHub — Server
 
 <p>
-  <img src="https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white" alt="Node.js 20" />
+  <img src="https://img.shields.io/badge/Node.js-24-339933?logo=node.js&logoColor=white" alt="Node.js 24" />
   <img src="https://img.shields.io/badge/Express-4.x-000000?logo=express&logoColor=white" alt="Express" />
   <img src="https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white" alt="MongoDB" />
   <img src="https://img.shields.io/badge/Firebase_Admin-SDK-FFCA28?logo=firebase&logoColor=black" alt="Firebase Admin" />
@@ -46,7 +46,7 @@ This is the **server-side** repository. The client application lives separately 
 
 | Layer | Technology |
 |---|---|
-| Runtime | Node.js 20 (pinned via `engines`) |
+| Runtime | Node.js 24 (pinned via `engines`) |
 | Framework | Express.js 4 |
 | Database | MongoDB Atlas (native driver, no ODM) |
 | Auth | Firebase Admin SDK (ID-token verification) + custom JWT (`jsonwebtoken`) |
